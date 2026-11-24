@@ -187,3 +187,10 @@ SB を編集するときこの構造を崩さない（詳細を SB に書き戻�
   それ以外は生成先の初回セッションで人が埋める。
 - 説明・原則を変更するときは README.md / playbook.md / AGENTS.md.template / 該当テンプレートの
   記述が食い違わないよう横断的に更新する。
+
+## fork 運用（このリポジトリ固有）
+
+このリポジトリは `aws-samples/sample-reverse-spec-flow` の fork で、**`main` は upstream のミラー、独自変更は `fork/custom`（既定ブランチ）** に置く。
+作業ブランチは `fork/custom` から切り、PR も `fork/custom` へ向ける（`main` にはコミットも PR マージもしない）。
+upstream の取り込みは `dev/fork-sync.sh`（週次の `.github/workflows/upstream-sync.yml` が自動実行）。
+手順・初期設定・衝突時の対応は `dev/fork-sync.md` が正本。`dev/fork-sync.sh` を変えたら `dev/fork-sync-test.sh` を通す。
