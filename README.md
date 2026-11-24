@@ -103,7 +103,7 @@ Main `init.sh` options:
 |---|---|
 | `purpose` (3rd argument, optional) | What the specifications are for. `maintenance` (maintaining and evolving the current system) / `evaluation` (assessing and estimating a reimagine effort) / `rebuild` (deep enough for an AI agent to implement the reimagined application). It changes what is produced and how strict the checks are. If omitted, you choose interactively (default `rebuild`) |
 | `--playbook <name>` | Optional. Counting rules for the target technology (see "Playbooks" below). Can be given more than once |
-| `--host <name>` | The AI tool to use (`claude-code` (default) / `kiro-ide` / `kiro-cli`) |
+| `--host <name>` | The AI tool to use (`claude-code` (default) / `kiro-ide` / `kiro-cli` / `codex`) |
 | `--list-playbooks` / `--list-hosts` | List the available Playbooks / AI tools |
 
 ## How the work proceeds
@@ -160,6 +160,7 @@ AI tools that can be used to write the specifications:
 | Claude Code | Verified (run end to end) | `--host claude-code` (default). `CLAUDE.md` (root) is also placed as a pointer to the entry point |
 | Kiro IDE | Verified (run end to end on a small target; scope in [hosts/README.md](hosts/README.md)) | `--host kiro-ide` (read the generated `HOST-SETUP.md` before opening) |
 | Kiro CLI | Not verified (only some functions checked; not run end to end) | `--host kiro-cli` |
+| Codex CLI | Not verified (placement only; nothing measured. Verifier isolation is not available) | `--host codex` (read the generated `HOST-SETUP.md` before opening) |
 
 For writing the specifications, AI tools not in this table are not supported. (The generated specifications can be handed to any AI agent.)
 Support status and measurement records are in [hosts/README.md](hosts/README.md) (Japanese).
