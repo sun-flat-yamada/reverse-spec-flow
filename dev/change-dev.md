@@ -26,6 +26,8 @@
 - **計画ファイルだけのコミット**が、実装ファイルに触れる最初のコミットより前にあること。計画と実装を同じコミットに入れると違反。
 - 免除: 変更が `docs/`・`README*`・`.devs/` だけのブランチ、`sync/upstream-*`（upstream 取り込み）、`dependabot/*`。
   `pipeline.md` / `playbook.md` などフレームワーク本体の `.md` は免除しない（本リポジトリの実装そのものなので）。
+- 同じブランチを続けて使う場合（前の PR が squash / rebase でマージ済み）は、`fork/custom` を merge した**後**に新しい計画をコミットする。
+  検査はまず「最後に base を取り込んだ merge 以降」だけを見て、そこに計画が無ければ全履歴で判定し直す。
 - 確認: `dev/change-dev.sh plan-check [base] [head-branch]`（既定 base は `origin/fork/custom`）。
 
 ## 3. Auto-Pilot（`CHG_DEV_AUTO_PILOT`）
@@ -65,6 +67,9 @@
 
 ## 5. AI エージェント（Claude Code など）の振る舞い
 
+- **PR の作成先はこの fork（base repository = `sun-flat-yamada/reverse-spec-flow`、base = `fork/custom`）。** fork では GitHub の UI・`gh` の既定の
+  作成先が upstream（`aws-samples/sample-reverse-spec-flow`）になるので、API/MCP では owner・repo を明示し、`gh pr` には `--repo` を付ける。
+  UI で作るときは「base repository」の欄を必ず確かめる。upstream への PR は、人が還元を決めたときだけ出す。
 - 作業ブランチは `fork/custom` から切る。クラウドセッションでは割り当てられたブランチをそのまま使う（改名しない）。
 - Auto-Pilot 有効時、PR は **ready for review** で作る（クラウドの既定「draft で作る」より、この文書を優先する）。
   マージはワークフローが行うので、エージェントは PR を ready にした後、CI の失敗やレビュー指摘があれば直す。

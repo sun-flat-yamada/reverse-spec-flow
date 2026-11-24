@@ -31,7 +31,9 @@ upstream の更新をいつでも無衝突に近い形で取り込めるよう�
 
 1. `main` に upstream に無いコミットを置かない。`fork-sync.sh` は `main` が 1 件でも先行していると止まる（exit 2）。
 2. 独自変更はすべて `fork/custom` に積む。取り込みは常に「`main` を fast-forward → `fork/custom` に merge」の順。
-3. upstream へ還元したい変更は `main`（＝upstream と同一）から切ったブランチで作り、upstream へ PR を出す。
+3. **PR の作成先はこの fork。** fork では GitHub の UI・`gh` の既定の作成先が upstream になる。UI では「base repository」を
+   `sun-flat-yamada/reverse-spec-flow` に、`gh` では `--repo sun-flat-yamada/reverse-spec-flow` を指定する。
+4. upstream へ還元したい変更は `main`（＝upstream と同一）から切ったブランチで作り、upstream へ PR を出す。
    `fork/custom` から切ると fork 独自の変更が混ざる。
 
 ## 2. 自動取り込み（GitHub Actions）
@@ -94,7 +96,7 @@ git fetch upstream main && git fetch origin fork/custom
 git switch -c sync/upstream-manual origin/fork/custom
 git merge upstream/main          # 衝突を解消して commit
 ./selftest.sh                    # 本体に手を入れたので必ず通す
-git push -u origin sync/upstream-manual   # fork/custom 向けに PR を作る
+git push -u origin sync/upstream-manual   # PR はこの fork の fork/custom 向けに作る（base repository に注意）
 git push origin upstream/main:main        # main の fast-forward（sync --push 済みなら不要。check が 0 になるまでが完了）
 ```
 

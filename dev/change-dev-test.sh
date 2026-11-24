@@ -76,6 +76,20 @@ $F plan-check fork/custom >/dev/null 2>&1; expect_rc 1 $? "base に既にある�
 git checkout -q -B feat/z fork/custom; echo more >> "$P"; git add -A; git commit -qm replan; impl c
 $F plan-check fork/custom >/dev/null 2>&1; expect_rc 1 $? "既存の計画ファイルを編集しただけのコミットも数えない"
 
+# 同じブランチで前の PR が squash マージ済み → base を merge して次の計画と実装を積む（クラウドセッションの再利用）
+fresh feat/reuse; plan; impl r1
+git checkout -q fork/custom; git merge -q --squash feat/reuse >/dev/null; git commit -qm squashed; git checkout -q feat/reuse
+git merge -q --no-edit fork/custom
+P2=.devs/changes/2026-11-25_y/implementation_plan.md; mkdir -p "$(dirname "$P2")"; echo p2 > "$P2"; git add -A; git commit -qm plan2; impl r2
+$F plan-check fork/custom >/dev/null 2>&1; expect_rc 0 $? "squash 済みの旧コミットが残るブランチでも、base 取り込み後の計画 → 実装は通過"
+git checkout -q -B feat/reuse2 feat/reuse~2; impl r3   # base 取り込み後に計画なしで実装（plan2 を含まない）
+$F plan-check fork/custom >/dev/null 2>&1; expect_rc 1 $? "base 取り込み後に計画なしで実装すれば違反（旧 squash 済み計画では通さない）"
+# 途中で base を merge しただけのブランチ（計画は merge より前）は通過
+git checkout -q fork/custom; echo b >> base.txt; git add -A; git commit -qm base2
+fresh feat/mid; P3=.devs/changes/2026-11-26_z/implementation_plan.md; mkdir -p "$(dirname "$P3")"; echo p3 > "$P3"; git add -A; git commit -qm plan3; impl m1
+git checkout -q fork/custom; echo c >> base.txt; git add -A; git commit -qm base3; git checkout -q feat/mid; git merge -q --no-edit fork/custom; impl m2
+$F plan-check fork/custom >/dev/null 2>&1; expect_rc 0 $? "途中で base を merge したブランチ（計画は merge 前）も通過"
+
 fresh; $F plan-check no-such-base >/dev/null 2>&1; expect_rc 2 $? "base が無ければ 2"
 
 [ "$fail" -eq 0 ] && echo "change-dev-test: PASS" || echo "change-dev-test: FAIL"

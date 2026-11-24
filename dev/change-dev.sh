@@ -92,10 +92,28 @@ cmd_plan_check() {
   while IFS= read -r f; do is_exempt_file "$f" || { all_exempt=0; break; }; done <<<"$files"
   if [ "$all_exempt" -eq 1 ]; then echo "plan-check: 免除（docs/・README*・.devs/ だけの変更）"; return 0; fi
 
-  local c cf plan_seen=0 plan_commit="" only_plan has_plan
+  # 先に「最後に base を取り込んだ merge 以降」だけを見る。同じブランチで前の PR が squash / rebase で
+  # マージ済みのとき、その古いコミット（base には別 SHA で入っている）で次の変更を違反扱いしないため。
+  # そこに計画が無ければ全履歴で判定し直す（途中で base を merge しただけのブランチを誤って落とさない）。
+  local m p seg=""
+  for m in $(git rev-list --first-parent --merges "$base"..HEAD); do
+    for p in $(git rev-list --parents -n 1 "$m" | cut -d' ' -f3-); do
+      if git merge-base --is-ancestor "$p" "$base"; then seg=$m; break 2; fi
+    done
+  done
+  if [ -n "$seg" ] && plan_check_range "$base" "$seg..HEAD" 2>/dev/null; then return 0; fi
+  plan_check_range "$base" "$base..HEAD"
+}
+
+# plan_check_range <base> <rev-range>: 範囲内のコミットを古い順に見て、実装に触れる最初のコミットより前に
+# base に無い implementation_plan.md だけのコミットがあるかを判定する
+plan_check_range() {
+  local base=$1 range=$2 c cf f plan_seen=0 plan_commit="" only_plan has_plan
   while IFS= read -r c; do
     [ -n "$c" ] || continue
-    cf=$(git -c core.quotePath=false diff-tree --no-commit-id --name-only -r --root -m "$c" | sort -u)
+    # base を取り込む merge 自体は判定しない（中身は base の変更）
+    if [ "$(git rev-list --parents -n 1 "$c" | wc -w)" -gt 2 ]; then continue; fi
+    cf=$(git -c core.quotePath=false diff-tree --no-commit-id --name-only -r --root "$c" | sort -u)
     [ -n "$cf" ] || continue
     only_plan=1; has_plan=0
     while IFS= read -r f; do
@@ -119,7 +137,7 @@ cmd_plan_check() {
     fi
     echo "  .devs/changes/<YYYY-MM-DD>_<slug>/implementation_plan.md を単独でコミットしてから実装する（dev/change-dev.md §2）" >&2
     return 1
-  done < <(git rev-list --reverse --topo-order "$base"..HEAD)
+  done < <(git rev-list --reverse --topo-order "$range")
   echo "plan-check: 違反 — 実装の変更があるのに、それに先立つ計画コミットが見つかりません" >&2
   return 1
 }
