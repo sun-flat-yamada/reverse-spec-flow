@@ -1,0 +1,104 @@
+name: Auto Merge
+
+# change-dev の Auto-Pilot（dev/change-dev.md §4）。品質ゲートが PR の head SHA で成功したら、
+# 条件を満たす PR を fork/custom へ Rebase Merge する。
+# - 設定・検査スクリプトは既定ブランチ（fork/custom）の版を使う（PR 自身が Auto-Pilot や検査を書き換えても効かない）
+# - PR のコードは実行しない（git の履歴を読むだけ）
+# - 品質ゲート自体は PR 側の定義で走る（pull_request の仕様）。そのため、ゲートや検査に触れる PR
+#   （.github/・selftest.sh・dev/*.sh）、取り込み・依存更新のブランチ、merge コミットを含む PR は自動マージせず人に残す
+# - ブランチ保護を迂回しない（必要承認などで GitHub が拒否したらマージせず失敗として残る）
+on:
+  workflow_run:
+    workflows: ["Quality Gate"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.path == '.github/workflows/quality-gate.yml' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout default branch (trusted scripts and settings)
+        uses: actions/checkout@v4
+        with:
+          ref: fork/custom
+          fetch-depth: 0
+
+      - name: Resolve Auto-Pilot
+        id: mode
+        env:
+          CHG_DEV_AUTO_PILOT: ${{ vars.CHG_DEV_AUTO_PILOT }}
+        run: |
+          echo "enabled=$(./dev/change-dev.sh mode --value)" >> "$GITHUB_OUTPUT"
+          ./dev/change-dev.sh mode
+
+      - name: Find and check the pull request
+        id: pr
+        if: steps.mode.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          # workflow_run.pull_requests は条件次第で空になるので、head ブランチから引き直す
+          n=$(gh api "repos/$REPO/pulls?state=open&base=fork/custom&head=${REPO%%/*}:$HEAD_BRANCH" --jq '.[0].number // empty')
+          if [ -z "$n" ]; then echo "fork/custom 向けの open PR がありません（$HEAD_BRANCH）"; exit 0; fi
+          pr=$(gh api "repos/$REPO/pulls/$n")
+          skip() { echo "マージしない: $*"; exit 0; }
+          [ "$(jq -r .draft <<<"$pr")" = false ] || skip "#$n は draft"
+          [ "$(jq -r .head.sha <<<"$pr")" = "$HEAD_SHA" ] || skip "#$n の head が品質ゲートを通った SHA と違う（新しい push の結果を待つ）"
+          jq -e '[.labels[].name] | index("hold") | not' <<<"$pr" >/dev/null || skip "#$n に hold ラベル"
+          case "$HEAD_BRANCH" in sync/upstream-*|dependabot/*) skip "#$n は取り込み・依存更新のブランチ（人がマージする。sync は merge コミットで入れる）" ;; esac
+          # ゲートや検査を変える PR は、変更後のゲートで自分を通せてしまうので人に残す
+          prot=$(gh api --paginate "repos/$REPO/pulls/$n/files" --jq '.[].filename' \
+            | grep -E '^(\.github/|selftest\.sh$|dev/[^/]+\.sh$)' || true)
+          [ -z "$prot" ] || skip "#$n はゲート・検査に関わるファイルを変更している（人がマージする）: $(echo $prot)"
+          # Rebase Merge は merge コミットを落とすので、merge コミットを含む PR は自動マージしない
+          merges=$(gh api --paginate "repos/$REPO/pulls/$n/commits" --jq '[.[] | select((.parents | length) > 1)] | length' | awk '{s+=$1} END {print s+0}')
+          [ "$merges" -eq 0 ] || skip "#$n は merge コミットを $merges 件含む（fork/custom へ rebase して push し直す）"
+          # 検査した head が最新の fork/custom を含むこと（base が進んだ後の組み合わせは未検査）
+          behind=$(gh api "repos/$REPO/compare/fork/custom...$HEAD_SHA" --jq .behind_by)
+          [ "$behind" -eq 0 ] || skip "#$n は fork/custom より $behind コミット遅れている（rebase して push すると品質ゲートが走り直す）"
+          # mergeable は非同期に計算されるので、null の間は少し待つ
+          for i in 1 2 3 4 5 6; do
+            m=$(gh api "repos/$REPO/pulls/$n" --jq .mergeable)
+            [ "$m" != null ] && break; sleep 5
+          done
+          [ "$m" = true ] || skip "#$n は衝突があるかマージ可能性が未確定（mergeable=$m）"
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Plan-first check (trusted script on PR history)
+        if: steps.pr.outputs.number != ''
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          cp dev/change-dev.sh "$RUNNER_TEMP/change-dev.sh"
+          git fetch --quiet origin "$HEAD_SHA"
+          git checkout --quiet --detach "$HEAD_SHA"
+          bash "$RUNNER_TEMP/change-dev.sh" plan-check origin/fork/custom "$HEAD_BRANCH"
+
+      - name: Rebase merge at the checked head SHA
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          N: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api -X PUT "repos/$REPO/pulls/$N/merge" -f merge_method=rebase -f sha="$HEAD_SHA"
+          echo "#$N を Rebase Merge しました"

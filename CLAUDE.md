@@ -194,3 +194,10 @@ SB を編集するときこの構造を崩さない（詳細を SB に書き戻�
 作業ブランチは `fork/custom` から切り、PR も `fork/custom` へ向ける（`main` にはコミットも PR マージもしない）。
 upstream の取り込みは `dev/fork-sync.sh`（週次の `.github/workflows/upstream-sync.yml` が自動実行）。
 手順・初期設定・衝突時の対応は `dev/fork-sync.md` が正本。`dev/fork-sync.sh` を変えたら `dev/fork-sync-test.sh` を通す。
+
+### 変更の運用（change-dev・自動マージ）
+
+`fork/custom` への変更は `dev/change-dev.md` に従う: **計画（`.devs/changes/<YYYY-MM-DD>_<slug>/implementation_plan.md`）を単独でコミットしてから実装** →
+`fork/custom` 向け PR → 品質ゲート（`.github/workflows/quality-gate.yml`）成功で `auto-merge.yml` が Rebase Merge。
+`CHG_DEV_AUTO_PILOT`（既定 true。`.github/change-dev.env`）が有効な間、計画の承認は待たず、PR は **draft でなく ready** で作る
+（クラウドセッションの既定より優先する）。止めるときは PR に `hold` ラベル。`dev/change-dev.sh` を変えたら `dev/change-dev-test.sh` を通す。

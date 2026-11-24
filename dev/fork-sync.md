@@ -45,6 +45,8 @@ upstream の更新をいつでも無衝突に近い形で取り込めるよう�
      **origin に同名のブランチが既にあれば作り直さない**（PR 上で積んだレビュー修正を上書きしない）。
 2. `sync/upstream-<sha>` → `fork/custom` の PR を開く（同じブランチの PR が既にあれば開かない）。
    それより古い `sync/upstream-*` の PR は、新しい PR に含まれるので閉じる。
+3. 取り込み PR は**人が「Create a merge commit」でマージする**（自動マージの対象外。`dev/change-dev.md` §4）。
+   Rebase / Squash でマージすると upstream のコミットが別 SHA になり、upstream が `fork/custom` の祖先でなくなって次回の取り込みが重複する。
 
 merge が衝突したときはジョブが失敗する（exit 3。GitHub から失敗通知が届く）。このとき `main` は fast-forward 済みで、
 sync ブランチは作られていない。§4 の手順で手で解消する。

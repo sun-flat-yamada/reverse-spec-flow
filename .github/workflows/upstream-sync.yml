@@ -62,4 +62,4 @@ jobs:
           fi
           gh pr create --base fork/custom --head "$BRANCH" \
             --title "chore(sync): merge upstream ${SHA:0:7} into fork/custom" \
-            --body "upstream \`aws-samples/sample-reverse-spec-flow\` の \`main\` (${SHA}) を取り込みます。\`main\` は同じ SHA へ fast-forward 済みです。手順と衝突時の対応は \`dev/fork-sync.md\` を参照してください。"
+            --body "upstream \`aws-samples/sample-reverse-spec-flow\` の \`main\` (${SHA}) を取り込みます。\`main\` は同じ SHA へ fast-forward 済みです。**「Create a merge commit」でマージしてください**（Rebase / Squash は upstream との祖先関係を切ります）。手順と衝突時の対応は \`dev/fork-sync.md\` を参照してください。"
