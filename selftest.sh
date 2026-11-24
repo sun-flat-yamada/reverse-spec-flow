@@ -1111,7 +1111,7 @@ _coupling_files=(
 # ——ファイル名の除外リストはどのホストでも無害に働くので結合ではない（決定事項 #10）。
 # 【検証官の隔離の実体名も含める】定義名（spec-verifier）・起動パラメタ（subagent_type）・起動スクリプト（kiro-verify）・
 # hook の記録（guard-canary）は harness の entry.md §5 にだけ書く。core は「HOST.md の『検証官の隔離』節」を指す。
-_coupling_re='\.claude/|\.kiro/|\.cursor(rules|/)|copilot-instructions|invoke_sub_agent|orchestrate_subagent|Agent tool|subagent_type|spec-verifier|kiro-verify|guard-canary'
+_coupling_re='\.claude/|\.kiro/|\.agents/|\.cursor(rules|/)|copilot-instructions|invoke_sub_agent|orchestrate_subagent|Agent tool|subagent_type|spec-verifier|kiro-verify|guard-canary'
 _coupling_hits=""
 for _cf in "${_coupling_files[@]}"; do
   [ -f "$_cf" ] || continue
@@ -1249,7 +1249,7 @@ _dup_place=$(grep -lF 'entry.md の写し' "$SCRIPT_DIR/init.sh" "$SCRIPT_DIR/ap
 # 【汎用スクリプトがホストを知らない】init.sh / apply-host.sh / hosts/_*.sh にホスト固有のパス・ファイル名が無いこと（GP-107 ルール1）。
 # 初版の apply-host.sh は残置物の一覧に `.claude` `.kiro` `kiro-verify.sh` を直書きし、kiro-cli を足したとき hosts/ の外に差分が出た
 # （GP-107 チェック方法「2 つ目の harness を足したときに hosts/ 以外へ差分が出ないか」に自分で該当）
-_generic_re='\.claude|\.kiro|kiro-verify|kiro-ide-verify|CLAUDE\.md|verifier-guard|spec-verifier'
+_generic_re='\.claude|\.kiro|\.agents/|kiro-verify|kiro-ide-verify|CLAUDE\.md|verifier-guard|spec-verifier'
 _generic_hits=""
 for _gf in "$SCRIPT_DIR/init.sh" "$SCRIPT_DIR/apply-host.sh" "$SCRIPT_DIR/hosts/_resolve.sh" "$SCRIPT_DIR/hosts/_place-common.sh"; do
   _h=$(grep -nE "$_generic_re" "$_gf" 2>/dev/null | grep -v 'hostcoupling:ignore' || true)
@@ -1760,6 +1760,14 @@ else
   ng "★init.sh --host=kiro-cli が失敗した: $(tail -3 "$WORK/kcli-init.log" 2>/dev/null | tr '\n' ' ')"
 fi
 VG_KIRO="$_KCREPO/spec-extraction/03-audit/kiro-verify.sh"
+# 【codex（placed-unverified）】skill を Agent Skills の標準の場所 .agents/skills/ に置くだけの harness（hosts/codex/MEASURED.md）
+_CXSRC="$WORK/dummy-cx"; _CXREPO="${_CXSRC}-spec"
+rm -rf "$_CXSRC" "$_CXREPO"; cp -R "$FIXTURE" "$_CXSRC"
+if ( cd "$WORK" && "$SCRIPT_DIR/init.sh" "$_CXSRC" codex-fixture rebuild --host=codex >"$WORK/codex-init.log" 2>&1 ); then
+  ok "init.sh --host=codex が成功する"
+else
+  ng "★init.sh --host=codex が失敗した: $(tail -3 "$WORK/codex-init.log" 2>/dev/null | tr '\n' ' ')"
+fi
 check "claude-code: 検証官の定義とパス制限 hook が置かれる（hook は実行可能）" \
   bash -c '[ -f "$1" ] && [ -x "$2" ]' _ "$VG_AGENT" "$VG_HOOK"
 check "kiro-cli: 検証官の起動スクリプトが 03-audit/ に置かれる（実行可能）" test -x "$VG_KIRO"
@@ -1771,15 +1779,15 @@ check "claude-code: 他ホストの配置物を置かない（.kiro/ と kiro-ve
 # shellcheck source=hosts/_place-common.sh
 PLACE_COMMON_FUNCS_ONLY=1 . "$SCRIPT_DIR/hosts/_place-common.sh"   # 関数だけを読む（配置は行わない）
 _pp_bad=""
-for _hn in claude-code kiro-ide kiro-cli; do
-  case "$_hn" in claude-code) _pp_repo="$SPEC_REPO" ;; kiro-ide) _pp_repo="$_KREPO" ;; kiro-cli) _pp_repo="$_KCREPO" ;; esac
+for _hn in claude-code kiro-ide kiro-cli codex; do
+  case "$_hn" in claude-code) _pp_repo="$SPEC_REPO" ;; kiro-ide) _pp_repo="$_KREPO" ;; kiro-cli) _pp_repo="$_KCREPO" ;; codex) _pp_repo="$_CXREPO" ;; esac
   _pp=$(_placed_paths_of "$SCRIPT_DIR/hosts/$_hn/profile.env")   # パーサの正本は hosts/_place-common.sh（複製しない）
   [ -n "$_pp" ] || _pp_bad="${_pp_bad} ${_hn}(PLACED_PATHS が空)"
   for _p in $_pp; do [ -e "$_pp_repo/$_p" ] || _pp_bad="${_pp_bad} ${_hn}:${_p}(置かれていない)"; done
   case " $_pp " in *" HOST.md "*|*" HOST-SETUP.md "*) _pp_bad="${_pp_bad} ${_hn}(HOST.md/HOST-SETUP.md は共通部分が置くので書かない)";; esac
 done
 [ -z "$_pp_bad" ] \
-  && ok "各 harness の PLACED_PATHS が宣言したものは実際に置かれている（3 harness）" \
+  && ok "各 harness の PLACED_PATHS が宣言したものは実際に置かれている（4 harness）" \
   || ng "★PLACED_PATHS の宣言と配置が食い違う:${_pp_bad}"
 check "hosts/_template/profile.env に PLACED_PATHS の欄がある（新ホストが宣言を忘れない）" \
   grep -q '^PLACED_PATHS=' "$SCRIPT_DIR/hosts/_template/profile.env"
@@ -1792,6 +1800,48 @@ check "skill が claude-code では .claude/skills/、kiro-cli では .kiro/skil
 # 【HOST.md = entry.md の写し】skill・手順書は「HOST.md の『検証官の隔離』節に従う」と書く。写さないと実行時に正本が無い
 check "HOST.md が使ったホストの entry.md の写しになっている（claude-code / kiro-cli）" \
   bash -c 'tail -n +3 "$1/HOST.md" | cmp -s - "$3/hosts/claude-code/entry.md" && tail -n +3 "$2/HOST.md" | cmp -s - "$3/hosts/kiro-cli/entry.md"' _ "$SPEC_REPO" "$_KCREPO" "$SCRIPT_DIR"
+# 【codex】Agent Skills の標準の場所に、本体と同じ内容で置く。Codex は SKILL.md に name と description を要求する（文書による）
+check "codex: skill が .agents/skills/ に本体と同じ内容で置かれる（name・description は本体の skill の検査が見る）" \
+  bash -c 'n=0; for d in "$2"/skills/*/; do k=$(basename "$d"); cmp -s "$d/SKILL.md" "$1/.agents/skills/$k/SKILL.md" || exit 1; n=$((n+1)); done; [ "$n" -ge 2 ]' _ "$_CXREPO" "$SCRIPT_DIR"
+check "codex: 他ホストの配置物を置かない（.claude/・.kiro/・CLAUDE.md が無い）／他ホストは .agents/ を置かない" \
+  bash -c '[ ! -e "$1/.claude" ] && [ ! -e "$1/.kiro" ] && [ ! -e "$1/CLAUDE.md" ] && [ ! -e "$2/.agents" ] && [ ! -e "$3/.agents" ] && [ ! -e "$4/.agents" ]' _ "$_CXREPO" "$SPEC_REPO" "$_KCREPO" "$_KREPO"
+check "codex: HOST.md が entry.md の写しで、HOST-SETUP.md が置かれ、配置物が初期コミットに入る" \
+  bash -c 'tail -n +3 "$1/HOST.md" | cmp -s - "$2/hosts/codex/entry.md" && [ -s "$1/HOST-SETUP.md" ] && git -C "$1" ls-files --error-unmatch HOST.md HOST-SETUP.md .agents/skills >/dev/null 2>&1' _ "$_CXREPO" "$SCRIPT_DIR"
+# 【起動時に読まれる入口の大きさ】Codex は AGENTS.md の連結を既定 32 KiB で黙って切り詰める（hosts/codex/MEASURED.md D2）。
+# ルートの AGENTS.md はどのホストでも起動時に読まれる唯一の入口なので、いちばん厳しい既知の上限に収める（超えると入口の末尾が消える）。
+_root_ag=$(wc -c < "$SPEC_REPO/AGENTS.md" | tr -d ' ')
+[ "$_root_ag" -le 32768 ] \
+  && ok "生成先のルート AGENTS.md が 32 KiB 以下（${_root_ag} バイト。起動時に読む入口が既知の最小の上限に収まる）" \
+  || ng "★生成先のルート AGENTS.md が ${_root_ag} バイトで 32 KiB を超える（Codex では末尾が落ちうる＝hosts/codex/MEASURED.md D2。詳細は目的別の規範へ移す）"
+# 【spec-extraction/ で開いたときの連結】codex の配置が、上限を超えるときだけ警告すること。
+# 配置は解析対象パスを埋める前に数えるので、数値の一致は見ない（上限を超えた値を出していることを見る）。
+# 実物は常に超えるので、小さい写しと大きい写しで placement.sh を直接動かして両方向を見る
+_cx_warn=$(sed -n 's/.*AGENTS.md の連結が約 \([0-9][0-9]*\) バイト.*/\1/p' "$WORK/codex-init.log" | head -1)
+_cx_sum=$(cat "$_CXREPO/AGENTS.md" "$_CXREPO/spec-extraction/AGENTS.md" | wc -c | tr -d ' ')
+if [ "$_cx_sum" -gt 32768 ]; then
+  [ -n "$_cx_warn" ] && [ "$_cx_warn" -gt 32768 ] && grep -q 'project_doc_max_bytes' "$_CXREPO/HOST-SETUP.md" \
+    && ok "codex: AGENTS.md の連結（${_cx_sum} バイト）が上限を超えることを配置時に警告し（約 ${_cx_warn}）、HOST-SETUP.md が project_doc_max_bytes を案内する" \
+    || ng "★codex: AGENTS.md の連結が ${_cx_sum} バイトで上限を超えるのに、配置時の警告（${_cx_warn:-無し}）か HOST-SETUP.md の案内が無い"
+fi
+_cxp="$WORK/codex-place-probe"
+for _cxn in 100 40000; do
+  rm -rf "$_cxp"; mkdir -p "$_cxp/repo/spec-extraction"
+  head -c 100 /dev/zero | tr '\0' a > "$_cxp/repo/AGENTS.md"; head -c "$_cxn" /dev/zero | tr '\0' a > "$_cxp/repo/spec-extraction/AGENTS.md"
+  ( SPEC_REPO="$_cxp/repo" WROOT="$_cxp/repo/spec-extraction" SKILLS_SRC="$_cxp/none" HOST_DIR="$SCRIPT_DIR/hosts/codex" \
+      bash -c '. "$1"' _ "$SCRIPT_DIR/hosts/codex/placement.sh" ) > "$_cxp/out.log" 2>&1; _cxrc=$?
+  case "$_cxn" in
+    100)   [ "$_cxrc" -eq 0 ] && [ -f "$_cxp/out.log" ] && ! grep -q 'WARN' "$_cxp/out.log" \
+             && ok "codex: 連結が上限以下なら配置時に警告しない（200 バイト）" || ng "★codex: 連結が上限以下なのに警告した（または配置が失敗した rc=${_cxrc}）" ;;
+    40000) [ "$_cxrc" -eq 0 ] && grep -q '約 40100 バイト' "$_cxp/out.log" \
+             && ok "codex: 連結が上限を超えれば配置時に警告する（40100 バイト）" || ng "★codex: 連結が上限を超えても警告しない（rc=${_cxrc}）" ;;
+  esac
+done
+rm -f "$_cxp/repo/spec-extraction/AGENTS.md"
+( SPEC_REPO="$_cxp/repo" WROOT="$_cxp/repo/spec-extraction" SKILLS_SRC="$_cxp/none" HOST_DIR="$SCRIPT_DIR/hosts/codex" \
+    bash -c '. "$1"' _ "$SCRIPT_DIR/hosts/codex/placement.sh" ) >/dev/null 2>&1 \
+  && ok "codex: spec-extraction/AGENTS.md が無くても配置が止まらない（apply-host.sh の途中で黙って落ちない）" \
+  || ng "★codex: spec-extraction/AGENTS.md が無いと配置が止まる"
+rm -rf "$_cxp"; unset _root_ag _cx_sum _cx_warn _cxp _cxn _cxrc
 _vh_miss=""
 while IFS= read -r _hd; do
   LC_ALL=C grep -q '^## 5\. 検証官の隔離' "$_hd/entry.md" 2>/dev/null || _vh_miss="${_vh_miss} $(basename "$_hd")"
@@ -4307,7 +4357,7 @@ while IFS= read -r -d '' f; do
     -nE '@Path|@Table|@RequestMapping|@CommandType|web\.xml|struts[^ ]*\.xml|\.orm\.xml' "$f" || true
   hit=$(grep -v '実測' "$WORK/scan-jvmleak.out" | grep -v 'stackmarker:ignore' || true)
   [ -n "$hit" ] && JVM_LEAK+="${f#"$SCRIPT_DIR"/}: $(echo "$hit" | head -1)"$'\n'
-done < <({ find "$SCRIPT_DIR/templates" "$SCRIPT_DIR/skills" "$SCRIPT_DIR/hosts/claude-code/agents" "$SCRIPT_DIR/hosts/claude-code/hooks" "$SCRIPT_DIR/hosts/kiro-cli" -type f \( -name '*.template' -o -name '*.md' -o -name '*.sh' \) -print0 2>/dev/null;
+done < <({ find "$SCRIPT_DIR/templates" "$SCRIPT_DIR/skills" "$SCRIPT_DIR/hosts/claude-code/agents" "$SCRIPT_DIR/hosts/claude-code/hooks" "$SCRIPT_DIR/hosts/kiro-cli" "$SCRIPT_DIR/hosts/codex" -type f \( -name '*.template' -o -name '*.md' -o -name '*.sh' \) -print0 2>/dev/null;
            # 【hosts/*/entry.md・setup.md は HOST.md / HOST-SETUP.md として生成先へ丸ごと写される配布物】走査に含める（教訓 10。2026-10-26）
            find "$SCRIPT_DIR/hosts" -mindepth 2 -maxdepth 2 -type f \( -name 'entry.md' -o -name 'setup.md' \) -print0 2>/dev/null; })
 # 【除外】GP-105 の本文は「これらの目印を汎用側に書くと壊れる」ことを論証するエントリなので、

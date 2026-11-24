@@ -101,7 +101,7 @@ Kiro IDE を使う場合は、開く前に `legacy-order-system-spec/HOST-SETUP.
 |---|---|
 | `purpose`（第 3 引数・省略可） | 仕様書を何に使うか。`maintenance`（現行システムの保守・発展）／`evaluation`（作り直しの評価・見積もり）／`rebuild`（AI エージェントが作り直しを実装できる深さまで書く）。作る範囲と点検の厳しさが変わります。省略すると対話で選択します（既定は `rebuild`） |
 | `--playbook <name>` | 任意。解析対象の技術に合わせた数え方（下の「Playbook」）。複数指定できます |
-| `--host <name>` | 使う AI ツール（`claude-code`（既定）／`kiro-ide`／`kiro-cli`） |
+| `--host <name>` | 使う AI ツール（`claude-code`（既定）／`kiro-ide`／`kiro-cli`／`codex`） |
 | `--list-playbooks` ／ `--list-hosts` | 使える Playbook ／ AI ツールの一覧 |
 
 ## 作業の流れ
@@ -158,6 +158,7 @@ AI ツールが自動で読み込むファイルは、ツールや版によっ�
 | Claude Code | 検証済み（最後まで完走） | `--host claude-code`（既定）。入口への導線として `CLAUDE.md`（ルート）も置きます |
 | Kiro IDE | 検証済み（小規模な対象で完走。範囲は [hosts/README.md](hosts/README.md)） | `--host kiro-ide`（開く前に、生成される `HOST-SETUP.md` を読んでください） |
 | Kiro CLI | 未検証（一部の機能のみ確認。全工程は未実施） | `--host kiro-cli` |
+| Codex CLI | 未検証（配置のみ。実測なし。検証官の隔離の手段は無い） | `--host codex`（開く前に、生成される `HOST-SETUP.md` を読んでください） |
 
 仕様書を作る側で、表に無い AI ツールは未対応です（作った仕様書は、どの AI エージェントにも渡せます）。
 対応状況と測定の記録は [hosts/README.md](hosts/README.md) にあります。

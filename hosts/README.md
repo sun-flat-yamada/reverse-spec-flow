@@ -16,6 +16,7 @@
 | `claude-code` | Claude Code 2.1.x | `verified-full` | 教訓 38（2 環境 × 3 回）＋ 完走試験 R1〜R4 | **既定**。`--host` 省略時はこれ |
 | `kiro-ide` | Kiro IDE 1.x | `verified-full` | `kiro-ide/MEASURED.md`（1.4.5 / 2026-10-21）＋ 完走試験 R5（1.4.5→1.4.26 / 2026-10-26） | R5 は jpetstore・Playbook なし・**小規模**（ノード 176・密度ブロック 329。R4 の約 4 分の 1）。Playbook の経路と HOLD-9 の (B)・(C) は試していない。329 ブロックのうち 82 は隔離の確かめを実施者が保存した出力に拠る（`kiro-ide/MEASURED.md` の R5 節）。**承認ダイアログが長時間の作業を止める**（手当ての `kiro-ide-allow.sh` は R5 の後に作り、未実測） |
 | `kiro-cli` | Kiro CLI 2.33.0（V2 / V3 エンジン。検証官の起動は V3 専用） | `placed-unverified` | `kiro-cli/MEASURED.md`（2.33.0 / 2026-10-21） | **測ったのは検証官の隔離と skill の読み込みだけ**。生成パイプライン全体は未実施 |
+| `codex` | OpenAI Codex CLI（版は未測定。IDE 拡張・クラウドは対象外） | `placed-unverified` | `codex/MEASURED.md`（**実測なし**。文書の確認のみ / 2026-11-24） | skill を Agent Skills の標準の場所 `.agents/skills/` に置くだけ。**検証官の隔離の手段は未確立**（縮退で行う）。`spec-extraction/` で開くと `AGENTS.md` の連結が既定の上限 32 KiB を超える（`codex/setup.md`）。**codex から別のホストへ切り替えたら `.agents/skills/` を消す**（Agent Skills を読む他のツールが古い写しを読みうる） |
 
 **ここに無いホストは「未対応」である。** 「置いてみたが測っていない」ものを足す場合は
 `SUPPORT_LEVEL=placed-unverified` と**明示**し、`MEASURED.md` に未測定であることを書く
