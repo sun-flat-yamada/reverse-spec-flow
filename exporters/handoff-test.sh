@@ -25,7 +25,7 @@ cap _capability-template.md TEMPLATE-DO-NOT-INDEX draft "雛形 UNKNOWN[blocking
 cap order.md SPEC-rebuild-order-01 verified "注文は確定できる（\`src/A.java:10\`）。<!-- UNKNOWN[blocking] コメント内は数えない -->
 ~~UNKNOWN[blocking] 在庫引当の順序~~ **解消済**（\`src/B.java:3\`）
 凡例: \`UNKNOWN[...]\` は未確定を表す"
-cap pay.md SPEC-rebuild-pay-01 draft "支払い UNKNOWN[blocking] と UNKNOWN[partial] と UNKNOWN[deferred]
+cap pay.md SPEC-rebuild-pay-01 draft "支払い UNKNOWN[blocking] と UNKNOWN[partial] と UNKNOWN[undecidable]
 返金 UNKNOWN: 手順が未確認
 <!-- 複数行の
 UNKNOWN[blocking] もコメント内 -->"

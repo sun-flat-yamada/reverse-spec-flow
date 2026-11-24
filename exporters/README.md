@@ -18,7 +18,7 @@ exporters/handoff.sh <仕様リポジトリ> [--target kiro|openspec|speckit|all
   `out-of-scope` / `generated` のものは渡さずに一覧の「渡さなかった仕様」に理由（`scope-exclusion`）と並べる。
 - **能力の一覧**（`README.md`）に、`coverage-status`・密度台帳の検証状態・UNKNOWN の件数と「渡してよいか」を出す。
   - 検証状態の正本は密度台帳（`spec-extraction/03-audit/density-ledger.tsv` の `verify_status`・`fabricated_open`）。front-matter の `verification:` は表示なので使わない。台帳が無い・行が無い能力は要注意。
-  - UNKNOWN は `gates.sh` の G-FRESH と同じ規則で数える（`UNKNOWN[blocking]`・タグなしの `UNKNOWN:` を未決とし、HTML コメント内と取り消し線の「解消済」行を除く）。
+  - UNKNOWN は `gates.sh` の G-FRESH と同じ規則で数える（`UNKNOWN[blocking]`・タグなしの `UNKNOWN:` を未決とし、HTML コメント内と取り消し線の「解消済」行を除く）。`partial` は別の列、`undecidable` などそれ以外のタグは「その他」の列に数える。
   - 未決の UNKNOWN・partial・未検証ブロック・fabricated の残る能力は**要注意**として、再構築側で確定扱いしないよう促す。
 - **共通規則**（`context.md`）を、各ツールの「常に読まれる場所」の形で出す。根拠（`[[SPEC-...]]`・`path:line`）を要求・設計・タスクに引き継ぐこと、
   `UNKNOWN` を推測で埋めずにそのツールの「未確定」の書き方に写すこと、未検証の仕様を確定扱いしないこと。

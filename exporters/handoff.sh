@@ -110,7 +110,8 @@ fi
 [ ${#CAPS[@]} -gt 0 ] || die "渡せる仕様がありません（specs/rebuild の能力仕様も specs/behavior の仕様も 0 件。out-of-scope / generated は渡さない）"
 
 # UNKNOWN の集計。gates.sh の G-FRESH と同じ規則: HTML コメントの中と、取り消し線で「解消済」と書いた行は数えない。
-# タグの無い `UNKNOWN:` / `UNKNOWN：` は未決（blocking と同じ扱い）。出力: "<未決> <partial> <その他>"
+# タグの無い `UNKNOWN:` / `UNKNOWN：` は未決（blocking と同じ扱い）。undecidable・deferred などは「その他」に数える。
+# 出力: "<未決> <partial> <その他>"
 unknown_counts() {
   awk '
     { line=$0
@@ -223,7 +224,7 @@ done
   echo "| OpenSpec | \`openspec/config-context.md\` の本文 | \`openspec/config.yaml\` の \`context: \\|\` ブロックの中（字下げして追記） | \`context:\` が全成果物に注入されること。要求は \`### Requirement:\` ＋ \`#### Scenario:\`（\`openspec validate\` が検査） |"
   echo "| Spec Kit | \`speckit/constitution-addendum.md\` の中身 | \`.specify/memory/constitution.md\` の末尾に**追記** | constitution の置き場所。spec の書式（FR-001・\`[NEEDS CLARIFICATION: …]\`）は雛形から |"
   echo
-  echo "**どのツールでも、次を対象プロジェクトから読める場所に置く**（例: \`docs/legacy-specs/\` に複製するか、サブモジュールにする）。"
+  echo "**どのツールでも、次を対象プロジェクトから読める場所に置く**（例: 対象プロジェクトの文書ディレクトリに複製するか、サブモジュールにする）。"
   echo "置いた場所に合わせて \`context.md\` 内のパスを読み替える。"
   echo
   echo "- \`specs/\` 一式（\`specs/AGENTS.md\` を含む）"
@@ -237,7 +238,7 @@ CONTEXT_BODY="既存システムの仕様は reverse-spec-flow が生成した \
 
 1. 要求・設計・タスクを起こす前に \`specs/AGENTS.md\` を読み、そこに書かれた信頼度の判定（coverage-status・UNKNOWN・検証状態）に従う。
 2. 既存挙動に由来する要求・設計判断・タスクには、根拠の仕様 ID（\`[[SPEC-...]]\`）と、仕様が挙げた \`path:line\` をそのまま引き継いで書く。根拠を書けないものは既存挙動ではなく新規の決定として区別する。
-3. \`UNKNOWN[...]\` を推測で埋めない。そのツールの「未確定」の書き方（質問・NEEDS CLARIFICATION・open question）に写し、種別（blocking / partial など）を残す。\`UNKNOWN[blocking]\` を含む能力は、それが解消するまで実装タスクに進めない。\`UNKNOWN[partial]\` は書かれた確認範囲の外を未確定として扱う。
+3. \`UNKNOWN[...]\` を推測で埋めない。そのツールの「未確定」の書き方（質問・NEEDS CLARIFICATION・open question）に写し、種別（blocking / partial / undecidable など）を残す。\`UNKNOWN[blocking]\` を含む能力は、それが解消するまで実装タスクに進めない。\`UNKNOWN[partial]\` は書かれた確認範囲の外を未確定として扱う。
 4. 受け渡し素材の一覧（handoff/README.md）で「要注意」の能力は確定扱いしない。そこから起こした要求には「未検証の仕様に由来」と書く。
 5. 仕様に書かれていない挙動を「既存どおり」と書かない。既存どおりと書けるのは、仕様に根拠があるものだけ。
 6. \`$ANOM\` があれば読む。そこに載った異常は、仕様どおりに直すと既存の利用者や連携先が壊れる可能性がある。再構築で直すか残すかを要求として明示的に決める。"
