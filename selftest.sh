@@ -3343,6 +3343,36 @@ _freeze_rows() { # $1=記録 $2=マーカー名（freeze-table / freeze-playbook
       if (p != "") print p "\t" h
     }' "$1"
 }
+# 全ハッシュ表（主表・Playbook 表・任意の第 3 表）の行。判定と突合で同じ集合を使う（表を足したとき片方だけ漏れない）
+_freeze_all_rows() { { _freeze_rows "$1" freeze-table; _freeze_rows "$1" freeze-playbook-table; _freeze_rows "$1" freeze-extra-table; } | LC_ALL=C sort; }
+# 再凍結の履歴の日付行（**最初の**「### 再凍結の履歴」節だけ。2 つ目の見出しを末尾に足して数を水増しできないように）
+_freeze_hist_rows() { LC_ALL=C awk '/^### 再凍結の履歴/{if(d)exit; s=1; d=1; next} s && /^#/{exit} s && /^\| 20[0-9][0-9]-/{sub(/[[:space:]]+$/,""); print}' "$1"; }
+_freeze_hist_n() { _freeze_hist_rows "$1" | LC_ALL=C grep -c . || true; }
+# _freeze_hist_audit <git の作業ディレクトリ> <その中の記録の相対パス> <作業用ディレクトリ>:
+#   記録の版（git の履歴を改名もたどって古い順に＋未コミットの作業ツリー）を並べ、
+#   "ハッシュ表が変わった回数 / 最初の版から増えた履歴行の数 / 消えた履歴行の数 / 版の数" を 1 行で出す。
+# 【T-FREEZE 残件 1】判定は**区間で**行う——ハッシュを変えたコミットと履歴を書いたコミットが分かれていても、
+# 後から履歴を足せば満たせる（コミット単位で縛ると、履歴を書き換えない限り赤が消えない）。
+# 履歴は追記専用なので、**どの版の行も最新版に残っていること**も見る（古い行を消して新しい行を足す数合わせを止める）。
+_freeze_hist_audit() {
+  local _d=$1 _rel=$2 _w=$3 _c _p _n=0 _chg=0 _prev="" _cur _first="" _last="$3/hist-last.md"
+  : > "$_w/hist-all.txt"
+  while IFS=$'\t' read -r _c _p; do
+    git -C "$_d" show "$_c:$_p" > "$_w/hist-v.md" 2>/dev/null || continue
+    _n=$((_n+1)); _cur=$(_freeze_all_rows "$_w/hist-v.md")
+    [ "$_n" -eq 1 ] && { _first=$(_freeze_hist_n "$_w/hist-v.md"); } || { [ "$_cur" != "$_prev" ] && _chg=$((_chg+1)); }
+    _prev=$_cur; _freeze_hist_rows "$_w/hist-v.md" >> "$_w/hist-all.txt"
+  done < <(git -C "$_d" log --follow --format='%H' --name-only -- "$_rel" 2>/dev/null | LC_ALL=C awk 'NF==1 && length($1)==40 && $1 !~ /[^0-9a-f]/ {c=$1; next} NF && c {print c "\t" $0; c=""}' | LC_ALL=C awk '{l[NR]=$0} END{for(i=NR;i>0;i--)print l[i]}')
+  # 【--reverse を付けない】git は --follow と --reverse を併用すると改名前の版を返さない（実測）。新しい順で取って逆に並べる
+  cp "$_d/$_rel" "$_last" 2>/dev/null || : > "$_last"
+  if [ "$_n" -eq 0 ]; then _first=$(_freeze_hist_n "$_last"); else _cur=$(_freeze_all_rows "$_last"); [ "$_cur" != "$_prev" ] && _chg=$((_chg+1)); fi
+  _n=$((_n+1))
+  _freeze_hist_rows "$_last" | LC_ALL=C sort -u > "$_w/hist-now.txt"
+  LC_ALL=C sort -u "$_w/hist-all.txt" > "$_w/hist-ever.txt"
+  printf '%s %s %s %s\n' "$_chg" "$(( $(_freeze_hist_n "$_last") - ${_first:-0} ))" "$(LC_ALL=C comm -23 "$_w/hist-ever.txt" "$_w/hist-now.txt" | LC_ALL=C grep -c . || true)" "$_n"
+}
+# 判定: ハッシュ表が変わった回数 ≤ 増えた履歴行の数、かつ消えた履歴行が 0
+_freeze_hist_ok() { set -- $1; [ "$1" -le "$2" ] && [ "$3" -eq 0 ]; }
 # 【判定をパイプの下流でしない】このスクリプトは `set -uo pipefail` で走る。
 # `生成側 | grep -q` は **grep -q が最初の一致で抜けた瞬間に上流が SIGPIPE で 141 になり、
 # pipefail がパイプ全体を非ゼロにする**ので、**一致しているのに条件が偽になる**（教訓 61）。
@@ -3565,10 +3595,22 @@ while IFS= read -r _crf; do
       ng "★注入検査: 行をすり替えた記録を作れなかった（表の書式が想定と違う。検査が空回りしている）"
     fi
     # 再凍結の履歴が空でないこと（測定器が変わったのに履歴を書かない形を残さない）
-    _frz_hist=$(LC_ALL=C awk '/^### 再凍結の履歴/{s=1;next} s && /^### /{s=0} s && /^\| 20[0-9][0-9]-/{n++} END{print n+0}' "$_crf")
+    _frz_hist=$(_freeze_hist_n "$_crf")
     [ "${_frz_hist:-0}" -ge 1 ] \
       && ok "${_crfn} の再凍結の履歴に日付行がある（測定器が変わった経緯を追える）" \
       || ng "★${_crfn} に再凍結の履歴の行が無い（ハッシュだけ更新して経緯を残さない形になっている）"
+    # 【ハッシュ表を変えたら、その分だけ履歴が増えていること】git の履歴（改名もたどる）と未コミットの変更を並べて区間で見る
+    if [ "$(git -C "$SCRIPT_DIR" rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then
+      _frz_aw="$WORK/freeze-audit"; mkdir -p "$_frz_aw"
+      _frz_au=$(_freeze_hist_audit "$SCRIPT_DIR" "${_crf#"$SCRIPT_DIR"/}" "$_frz_aw")
+      read -r _frz_a1 _frz_a2 _frz_a3 _frz_a4 <<<"$_frz_au"
+      _freeze_hist_ok "$_frz_au" \
+        && ok "${_crfn} はハッシュ表の変更の回数（${_frz_a1}）以上に再凍結の履歴を足し、過去の履歴行を消していない（版 ${_frz_a4}）" \
+        || ng "★${_crfn} の再凍結の履歴が足りない（ハッシュ表の変更 ${_frz_a1} 回 / 増えた履歴行 ${_frz_a2} / 消えた履歴行 ${_frz_a3}）。ハッシュを変えたら履歴に行を足す（追記専用）"
+      rm -rf "$_frz_aw"; unset _frz_aw _frz_au _frz_a1 _frz_a2 _frz_a3 _frz_a4
+    else
+      ng "★${_crfn} の再凍結の履歴の追記を確かめられない（git の履歴が読めないか浅い。完全な履歴で走らせる）"
+    fi
     # --- ここから先は現物と突き合わせる検査。実行済みの記録は当時の版を指すのが正しいので pending だけ ---
     if [ "$_fst" = "pending" ]; then
       _freeze_check_live "$_crf"
@@ -3613,9 +3655,49 @@ while IFS= read -r _crf; do
   unset _crfn _fst _fst_n _frz_state_ok
 done < "$_frz_list"
 rm -f "$_frz_list"
-# マーカーの値の集合が記録側にも書かれていること（検査だけが知っている語にしない）
-check "凍結記録が freeze-state の取りうる値を宣言している" \
-  bash -c 'LC_ALL=C grep -q "取りうる値は .pending.（未実施）と .done.（実施済み）" "$1/dev/completion-run-freeze.md"' _ "$SCRIPT_DIR"
+# 【履歴の追記の判定を検証する】使い捨ての git リポジトリ（記録はサブディレクトリの下）で、実在の記録の写しを版として積む（T-FREEZE 残件 1）
+_frz_src="$SCRIPT_DIR/dev/completion-run-r3-freeze.md"; _frz_g="$WORK/freeze-hist-repo"; _frz_aw="$WORK/freeze-hist-aw"
+_frz_h0=$(_freeze_rows "$_frz_src" freeze-extra-table | LC_ALL=C awk -F'\t' 'length($2)==16 && $2 !~ /[^0-9a-f]/ {print $2; exit}')
+_frz_case() { # _frz_case <名前> <版を作る手順...>: 初版をコミットし、手順で版を積んで監査結果を出す
+  local _nm=$1; shift
+  rm -rf "$_frz_g" "$_frz_aw"; mkdir -p "$_frz_g/fw/dev" "$_frz_aw"
+  git -C "$_frz_g" init -q 2>/dev/null; git -C "$_frz_g" config user.email t@t; git -C "$_frz_g" config user.name t
+  cp "$_frz_src" "$_frz_g/fw/dev/r.md"; git -C "$_frz_g" add -A; git -C "$_frz_g" commit -qm init
+  "$@"
+  _freeze_hist_audit "$_frz_g/fw" dev/r.md "$_frz_aw"
+}
+_fh_hash()  { LC_ALL=C sed -i.bak "s/\`${_frz_h0}\`/\`${1}\`/" "$_frz_g/fw/dev/r.md"; rm -f "$_frz_g/fw/dev/r.md.bak"; }
+_fh_row()   { LC_ALL=C awk -v r="| $1 | selftest の注入 |" '{print} /^### 再凍結の履歴/{s=1} s && /^\| 20[0-9][0-9]-/ && !d {print r; d=1}' "$_frz_g/fw/dev/r.md" > "$_frz_aw.t" && mv "$_frz_aw.t" "$_frz_g/fw/dev/r.md"; }
+_fh_commit(){ git -C "$_frz_g" add -A; git -C "$_frz_g" commit -qm "$1"; }
+_fh_hashonly()   { _fh_hash ffffffffffffffff; _fh_commit h; }
+_fh_hashthenrow(){ _fh_hash ffffffffffffffff; _fh_commit h; _fh_row 2099-01-01; _fh_commit r; }
+_fh_rotate()     { LC_ALL=C awk '/^### 再凍結の履歴/{s=1} s && /^\| 20[0-9][0-9]-/ && !d {d=1; next} {print}' "$_frz_g/fw/dev/r.md" > "$_frz_aw.t" && mv "$_frz_aw.t" "$_frz_g/fw/dev/r.md"; _fh_commit del
+                   _fh_hash ffffffffffffffff; _fh_row 2099-01-01; _fh_commit hr; }
+_fh_decoy()      { _fh_hash ffffffffffffffff; printf '\n### 再凍結の履歴\n\n| 2099-01-01 | 水増し |\n' >> "$_frz_g/fw/dev/r.md"; _fh_commit d; }
+_fh_uncommitted(){ _fh_hash ffffffffffffffff; }
+if [ -n "$_frz_h0" ]; then
+  _freeze_hist_ok "$(_frz_case a _fh_hashonly)" && ng "★注入検査: ハッシュだけ変えて履歴を足さないコミットを通した" || ok "注入検査: ハッシュだけ変えて履歴を足さないコミットを検出する（記録はサブディレクトリの下）"
+  _freeze_hist_ok "$(_frz_case b _fh_uncommitted)" && ng "★注入検査: 未コミットのハッシュ変更を見逃した" || ok "注入検査: 未コミットのハッシュ変更（履歴なし）を検出する"
+  _freeze_hist_ok "$(_frz_case c _fh_hashthenrow)" && ok "注入検査: ハッシュの変更の後のコミットで履歴を足せば通す（区間で判定。赤が消えなくならない）" || ng "★注入検査: 後から履歴を足しても通らない（コミット単位で縛っている）"
+  _freeze_hist_ok "$(_frz_case d _fh_rotate)" && ng "★注入検査: 古い履歴行を消して新しい行を足す数合わせを通した" || ok "注入検査: 古い履歴行を消した版を検出する（追記専用）"
+  _freeze_hist_ok "$(_frz_case e _fh_decoy)" && ng "★注入検査: 2 つ目の履歴見出しで水増しした版を通した" || ok "注入検査: 2 つ目の「再凍結の履歴」見出しの行は数えない"
+  # 改名をまたいだハッシュ変更（改名の前に変え、後で改名）を、改名後のパスから検出できること
+  rm -rf "$_frz_g" "$_frz_aw"; mkdir -p "$_frz_g/fw/dev" "$_frz_aw"
+  git -C "$_frz_g" init -q; git -C "$_frz_g" config user.email t@t; git -C "$_frz_g" config user.name t
+  cp "$_frz_src" "$_frz_g/fw/dev/r.md"; _fh_commit init; _fh_hashonly; git -C "$_frz_g" mv fw/dev/r.md fw/dev/r2.md; _fh_commit mv
+  _freeze_hist_ok "$(_freeze_hist_audit "$_frz_g/fw" dev/r2.md "$_frz_aw")" && ng "★注入検査: 改名の前のハッシュ変更を見逃した" || ok "注入検査: 改名の前のハッシュ変更も改名後のパスから検出する"
+else
+  ng "★注入検査: 履歴の追記の判定を検証する写しを作れなかった（第 3 表のハッシュが読めない。検査が空回りしている）"
+fi
+rm -rf "$_frz_g" "$_frz_aw" "$_frz_aw.t"; unset _frz_src _frz_g _frz_aw _frz_h0 
+unset -f _frz_case _fh_hash _fh_row _fh_commit _fh_hashonly _fh_hashthenrow _fh_rotate _fh_decoy _fh_uncommitted
+# 【取りうる値は記録のマーカーから読む】散文への grep は言い換えで黙って落ちる（T-FREEZE 残件 3）。
+# 検査は pending / done の 2 値で分岐しているので、マーカーの集合がそれと一致しなければ赤にする（第三の値は実装と対で足す）
+_frz_vals=$(cat "$SCRIPT_DIR"/dev/*.md 2>/dev/null | LC_ALL=C sed -n 's/^<!-- freeze-state-values:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*-->.*$/\1/p' | tr ' ' '\n' | LC_ALL=C sort -u | tr '\n' ' ')
+[ "$_frz_vals" = "done pending " ] \
+  && ok "凍結記録が freeze-state の取りうる値をマーカーで宣言し、検査の分岐（pending / done）と一致する" \
+  || ng "★凍結記録の freeze-state-values マーカーが無いか、検査の分岐と違う（値: ${_frz_vals:-無し}。期待: pending done）"
+unset _frz_vals
 unset _crf _frz_list _frz_n _fm
 
 # --- Windows のシェル選択が利用者向け文書に書かれていること（2026-09-25 の実測を反映） ---

@@ -11,6 +11,8 @@
 
 <!-- freeze-state: done -->
 
+<!-- freeze-state-values: pending done -->
+
 **`freeze-state` の取りうる値は `pending`（未実施）と `done`（実施済み）の 2 つだけ**である。
 **その回を無効と判定したとき**（§0c・§7。ゲートを直したので測定器が変わった等）は
 **`pending` に戻し、§2 を再凍結して「再凍結の履歴」に無効の理由を書く**
