@@ -1,0 +1,86 @@
+name: Quality Gate
+
+# fork/custom 向けの品質ゲート（dev/change-dev.md）。成功すると auto-merge.yml が PR を Rebase Merge する。
+#  1. dev/fork-sync-test.sh・dev/change-dev-test.sh（運用スクリプトのフィクスチャ検査）
+#  2. plan-check（PR のみ。計画先行）
+#  3. selftest.sh（フレームワーク本体のスモークテスト）。失敗があれば base でも走らせ、
+#     **base に無い失敗が増えたときだけ**赤にする（upstream 由来の既存の失敗で fork の作業を止めない）
+on:
+  pull_request:
+    branches: [fork/custom]
+    # ready_for_review / unlabeled: draft 解除や hold 外しで自動マージの判定をやり直すため
+    types: [opened, synchronize, reopened, ready_for_review, unlabeled]
+  push:
+    branches: [fork/custom]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout (PR head, not the synthetic merge commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ops script tests
+        run: |
+          ./dev/fork-sync-test.sh
+          ./dev/change-dev-test.sh
+
+      - name: Plan-first check
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: ./dev/change-dev.sh plan-check origin/fork/custom "$HEAD_BRANCH"
+
+      - name: selftest (head)
+        id: head
+        run: |
+          set +e
+          ./selftest.sh > "$RUNNER_TEMP/head.log" 2>&1
+          rc=$?
+          grep -E '^結果:' "$RUNNER_TEMP/head.log" || tail -5 "$RUNNER_TEMP/head.log"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: selftest (base) and compare failures
+        if: steps.head.outputs.rc != '0'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -uo pipefail
+          # 失敗行（テンポラリのパスを含む最終行は除く）だけを集合として比べる
+          # sort -u なので、既存の失敗と全く同じ文言の失敗が増えても検出しない（件数ではなく種類で比べている）
+          fails() { grep -E '^[[:space:]]*❌' "$1" | grep -v 'selftest 失敗あり' | sed 's/[[:space:]]*$//' | sort -u; }
+          fails "$RUNNER_TEMP/head.log" > "$RUNNER_TEMP/head.fails"
+          if [ ! -s "$RUNNER_TEMP/head.fails" ] || ! grep -qE '^結果:' "$RUNNER_TEMP/head.log"; then
+            # 失敗行が無いのに非 0、または結果行が無い＝途中で落ちた。base と比べず赤にする（fail-open にしない）
+            echo "::error::selftest が結果を出さずに終了しました"; tail -40 "$RUNNER_TEMP/head.log"; exit 1
+          fi
+          if [ -z "${BASE_SHA:-}" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "比較する base がありません。head の失敗:"; cat "$RUNNER_TEMP/head.fails"; exit 1
+          fi
+          git worktree add --quiet --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          (cd "$RUNNER_TEMP/base" && ./selftest.sh > "$RUNNER_TEMP/base.log" 2>&1) || true
+          grep -E '^結果:' "$RUNNER_TEMP/base.log" || true
+          fails "$RUNNER_TEMP/base.log" > "$RUNNER_TEMP/base.fails"
+          new=$(comm -23 "$RUNNER_TEMP/head.fails" "$RUNNER_TEMP/base.fails")
+          if [ -n "$new" ]; then
+            echo "::error::selftest に base に無い失敗が増えました"; printf '%s\n' "$new"; exit 1
+          fi
+          echo "selftest の失敗は base と同じ（$(wc -l < "$RUNNER_TEMP/head.fails") 件）。この変更による増加なし"
