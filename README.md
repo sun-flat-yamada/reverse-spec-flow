@@ -190,6 +190,13 @@ Playbooks currently available:
 
 If you work with a technology often, you can write and add a Playbook ([docs/authoring-playbook.md](docs/authoring-playbook.md), Japanese).
 
+## Handing specs to spec-driven tools (optional)
+
+After the specs are done, if the rebuild uses a spec-driven tool such as Kiro, OpenSpec or GitHub Spec Kit,
+`exporters/handoff.sh <spec repository>` produces hand-off material: the list of capabilities with their verification status,
+rules that keep citations and `UNKNOWN` items intact, and a prompt per capability.
+The round trip in each tool has not been measured yet ([exporters/README.md](exporters/README.md)).
+
 ## Cautions
 
 - **The specifications may still contain errors.** The checks reduce errors, but cannot eliminate them completely.

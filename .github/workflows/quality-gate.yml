@@ -48,6 +48,7 @@ jobs:
         run: |
           ./dev/fork-sync-test.sh
           ./dev/change-dev-test.sh
+          ./exporters/handoff-test.sh
 
       - name: Plan-first check
         if: github.event_name == 'pull_request'

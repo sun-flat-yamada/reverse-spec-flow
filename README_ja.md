@@ -188,6 +188,12 @@ Playbook は、特定の技術について「何を数えれば全体を網羅�
 
 よく使う技術がある場合は、Playbook を作って追加できます（[docs/authoring-playbook.md](docs/authoring-playbook.md)）。
 
+## 再構築側の仕様駆動ツールへ渡す（任意）
+
+仕様ができた後、再構築側で Kiro・OpenSpec・GitHub Spec Kit などの仕様駆動ツールを使う場合は、
+`exporters/handoff.sh <仕様リポジトリ>` で受け渡しの素材（能力の一覧と検証状態、根拠と `UNKNOWN` を落とさないための規則、能力ごとの依頼文）を作れます。
+各ツールでの往復はまだ実測していません（[exporters/README.md](exporters/README.md)）。
+
 ## ご利用にあたっての注意
 
 - **仕様書には誤りが残ることがあります。** 点検の仕組みで誤りを減らしていますが、完全になくすことはできません。
