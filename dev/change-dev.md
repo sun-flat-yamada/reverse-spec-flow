@@ -65,6 +65,9 @@
 
 ## 5. AI エージェント（Claude Code など）の振る舞い
 
+- **PR の作成先はこの fork（base repository = `sun-flat-yamada/reverse-spec-flow`、base = `fork/custom`）。** fork では GitHub の UI・`gh` の既定の
+  作成先が upstream（`aws-samples/sample-reverse-spec-flow`）になるので、API/MCP では owner・repo を明示し、`gh pr` には `--repo` を付ける。
+  UI で作るときは「base repository」の欄を必ず確かめる。upstream への PR は、人が還元を決めたときだけ出す。
 - 作業ブランチは `fork/custom` から切る。クラウドセッションでは割り当てられたブランチをそのまま使う（改名しない）。
 - Auto-Pilot 有効時、PR は **ready for review** で作る（クラウドの既定「draft で作る」より、この文書を優先する）。
   マージはワークフローが行うので、エージェントは PR を ready にした後、CI の失敗やレビュー指摘があれば直す。

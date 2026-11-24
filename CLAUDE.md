@@ -192,6 +192,9 @@ SB を編集するときこの構造を崩さない（詳細を SB に書き戻�
 
 このリポジトリは `aws-samples/sample-reverse-spec-flow` の fork で、**`main` は upstream のミラー、独自変更は `fork/custom`（既定ブランチ）** に置く。
 作業ブランチは `fork/custom` から切り、PR も `fork/custom` へ向ける（`main` にはコミットも PR マージもしない）。
+**PR の作成先リポジトリは必ずこの fork（`sun-flat-yamada/reverse-spec-flow`）にする。** fork では GitHub の UI・`gh` の既定の作成先が
+親（upstream: `aws-samples/sample-reverse-spec-flow`）になる。API/MCP では owner・repo にこの fork を明示し、`gh pr` には必ず `--repo` を付ける
+（品質ゲートが `--repo` の無い `gh pr` を検出する）。upstream への PR は、人が還元を決めたときだけ `main` から切ったブランチで出す。
 upstream の取り込みは `dev/fork-sync.sh`（週次の `.github/workflows/upstream-sync.yml` が自動実行）。
 手順・初期設定・衝突時の対応は `dev/fork-sync.md` が正本。`dev/fork-sync.sh` を変えたら `dev/fork-sync-test.sh` を通す。
 

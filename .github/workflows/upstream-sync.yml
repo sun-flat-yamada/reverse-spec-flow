@@ -44,6 +44,7 @@ jobs:
           ./dev/fork-sync.sh sync --push | tee sync.log
           grep -E '^(SYNC_BRANCH|UPSTREAM_SHA)=' sync.log >> "$GITHUB_OUTPUT" || true
 
+      # fork では gh の既定の対象が親リポジトリ（upstream）になる。gh pr は必ず --repo で fork を指す
       - name: Open pull request into fork/custom
         if: steps.sync.outputs.SYNC_BRANCH != ''
         env:
@@ -52,14 +53,14 @@ jobs:
           SHA: ${{ steps.sync.outputs.UPSTREAM_SHA }}
         run: |
           # 古い upstream SHA 向けの取り込み PR は新しい PR に含まれるので閉じる
-          gh pr list --base fork/custom --state open --json number,headRefName \
+          gh pr list --repo "$GITHUB_REPOSITORY" --base fork/custom --state open --json number,headRefName \
             --jq ".[] | select(.headRefName | startswith(\"sync/upstream-\")) | select(.headRefName != \"$BRANCH\") | .number" |
           while read -r n; do
-            gh pr close "$n" --delete-branch --comment "新しい取り込み PR（$BRANCH）に置き換えました。"
+            gh pr close "$n" --repo "$GITHUB_REPOSITORY" --delete-branch --comment "新しい取り込み PR（$BRANCH）に置き換えました。"
           done
-          if [ -n "$(gh pr list --head "$BRANCH" --base fork/custom --state open --json number --jq '.[].number')" ]; then
+          if [ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base fork/custom --state open --json number --jq '.[].number')" ]; then
             echo "PR already open for $BRANCH"; exit 0
           fi
-          gh pr create --base fork/custom --head "$BRANCH" \
+          gh pr create --repo "$GITHUB_REPOSITORY" --base fork/custom --head "$BRANCH" \
             --title "chore(sync): merge upstream ${SHA:0:7} into fork/custom" \
             --body "upstream \`aws-samples/sample-reverse-spec-flow\` の \`main\` (${SHA}) を取り込みます。\`main\` は同じ SHA へ fast-forward 済みです。**「Create a merge commit」でマージしてください**（Rebase / Squash は upstream との祖先関係を切ります）。手順と衝突時の対応は \`dev/fork-sync.md\` を参照してください。"

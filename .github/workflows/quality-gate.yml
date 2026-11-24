@@ -37,6 +37,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: PR target is pinned to this fork
+        # fork では gh pr の既定の対象が親リポジトリ（upstream）になる。--repo の無い gh pr を禁止する
+        run: |
+          bad=$(grep -nE '(^|[^[:alnum:]_-])gh pr [a-z]+' .github/workflows/*.yml dev/*.sh 2>/dev/null | grep -v -- '--repo' || true)
+          if [ -n "$bad" ]; then echo "::error::--repo の無い gh pr があります（upstream に PR を作る恐れ）"; printf '%s\n' "$bad"; exit 1; fi
+          echo "gh pr はすべて --repo 付き"
+
       - name: Ops script tests
         run: |
           ./dev/fork-sync-test.sh
