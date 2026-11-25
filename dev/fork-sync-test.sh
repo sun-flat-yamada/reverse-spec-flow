@@ -69,5 +69,15 @@ own=$(g rev-parse HEAD)
 g remote set-url upstream "$T/origin.git"
 "$F" check >/dev/null 2>&1; expect_rc 2 $? "upstream remote が期待と違う repo を指せば 2"
 
+# --- fork-upstream-ref.sh（凍結記録の検査が「upstream の版」とみなす参照） ---
+R="$HERE/fork-upstream-ref.sh"
+g remote set-url upstream "$T/up"; g fetch -q upstream; g fetch -q origin
+out=$("$R" . | tr '\n' ' ')
+[ "$out" = "$(g rev-parse refs/remotes/upstream/main) $(g rev-parse refs/remotes/origin/main) " ] && ok "fork-upstream-ref: upstream/main と origin/main の両方を出す（片方が古くても取り込みを認められる）" || ng "fork-upstream-ref: 両方を出さない: $out"
+g remote remove upstream
+[ "$("$R" .)" = "$(g rev-parse refs/remotes/origin/main)" ] && ok "fork-upstream-ref: upstream が無ければ origin/main（fork のミラー）だけを出す" || ng "fork-upstream-ref: origin/main を返さない"
+g init -q "$T/lonely"; out=$("$R" "$T/lonely"); rc=$?
+[ "$rc" -eq 1 ] && [ -z "$out" ] && ok "fork-upstream-ref: どちらも無ければ何も出さず exit 1（検査は全変更を数える）" || ng "fork-upstream-ref: 参照が無いのに '$out'（rc=$rc）"
+
 [ "$fail" -eq 0 ] && echo "fork-sync-test: PASS" || echo "fork-sync-test: FAIL"
 exit "$fail"

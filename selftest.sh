@@ -3348,28 +3348,59 @@ _freeze_all_rows() { { _freeze_rows "$1" freeze-table; _freeze_rows "$1" freeze-
 # 再凍結の履歴の日付行（**最初の**「### 再凍結の履歴」節だけ。2 つ目の見出しを末尾に足して数を水増しできないように）
 _freeze_hist_rows() { LC_ALL=C awk '/^### 再凍結の履歴/{if(d)exit; s=1; d=1; next} s && /^#/{exit} s && /^\| 20[0-9][0-9]-/{sub(/[[:space:]]+$/,""); print}' "$1"; }
 _freeze_hist_n() { _freeze_hist_rows "$1" | LC_ALL=C grep -c . || true; }
-# _freeze_hist_audit <git の作業ディレクトリ> <その中の記録の相対パス> <作業用ディレクトリ>:
-#   記録の版（git の履歴を改名もたどって古い順に＋未コミットの作業ツリー）を並べ、
-#   "ハッシュ表が変わった回数 / 最初の版から増えた履歴行の数 / 消えた履歴行の数 / 版の数" を 1 行で出す。
+# _freeze_hist_audit <git の作業ディレクトリ> <その中の記録の相対パス> <作業用ディレクトリ> [upstream の参照（空白区切りで複数可）]:
+#   記録の版（今のブランチの first-parent の系列を改名もたどって古い順に＋未コミットの作業ツリー）を並べ、
+#   "fork のハッシュ表の変更回数 / fork が足した履歴行の数 / fork が消した履歴行の数 / 版の数 / upstream の取り込みとして数えなかった変更回数" を 1 行で出す。
 # 【T-FREEZE 残件 1】判定は**区間で**行う——ハッシュを変えたコミットと履歴を書いたコミットが分かれていても、
 # 後から履歴を足せば満たせる（コミット単位で縛ると、履歴を書き換えない限り赤が消えない）。
 # 履歴は追記専用なので、**どの版の行も最新版に残っていること**も見る（古い行を消して新しい行を足す数合わせを止める）。
+# 【first-parent でたどる】各版を**自分の親の版**と比べるため（日付順に全履歴を並べると、別の枝の版と比べて同じ変更を二重に数える。実測）。
+# 【upstream の取り込み】参照を渡すと、**第 2 親が upstream の参照から到達できる merge**（＝取り込み）での変化のうち、
+# 第 2 親（upstream）の記録と一致する行を upstream から来た変更として数えない。履歴行も同じで、upstream が足した行は fork の追記に数えず
+# （fork の変更を相殺させない）、upstream が消した行は fork の違反にしない。**merge でないコミットは常に fork の変更として数える**
+# （内容だけで判定すると、fork がハッシュを upstream の値に戻す変更を見逃す）。未コミットの merge（MERGE_HEAD）も同じに扱う。
 _freeze_hist_audit() {
-  local _d=$1 _rel=$2 _w=$3 _c _p _n=0 _chg=0 _prev="" _cur _first="" _last="$3/hist-last.md"
-  : > "$_w/hist-all.txt"
+  local _d=$1 _rel=$2 _w=$3 _refs=${4:-} _c _p _n=0 _chg=0 _up=0 _p2 _last="$3/hist-last.md" _gd
+  : > "$_w/hist-all.txt"; : > "$_w/hist-add.txt"; : > "$_w/hist-updel.txt"; : > "$_w/hist-prevh.txt"; : > "$_w/hist-prev.txt"
+  _fha_is_up() { local _r; [ -n "$1" ] || return 1; for _r in $_refs; do git -C "$_d" merge-base --is-ancestor "$1" "$_r" 2>/dev/null && return 0; done; return 1; }
+  _fha_step() { # _fha_step <版のファイル> <upstream から取り込んだ第 2 親（無ければ空）> <その親でのパス>
+    _freeze_all_rows "$1" > "$_w/hist-cur.txt"; _freeze_hist_rows "$1" | LC_ALL=C sort -u > "$_w/hist-curh.txt"
+    _n=$((_n+1))
+    if [ "$_n" -gt 1 ]; then
+      : > "$_w/hist-uprows.txt"; : > "$_w/hist-uph.txt"
+      if [ -n "$2" ] && git -C "$_d" show "$2:$3" > "$_w/hist-u.md" 2>/dev/null; then
+        _freeze_all_rows "$_w/hist-u.md" > "$_w/hist-uprows.txt"; _freeze_hist_rows "$_w/hist-u.md" | LC_ALL=C sort -u > "$_w/hist-uph.txt"
+      fi
+      # ハッシュ表: 変わった行のうち upstream（第 2 親）と一致しない行があれば fork の変更
+      if ! cmp -s "$_w/hist-prev.txt" "$_w/hist-cur.txt"; then
+        if [ -z "$(LC_ALL=C comm -23 "$_w/hist-cur.txt" "$_w/hist-prev.txt" | LC_ALL=C comm -23 - "$_w/hist-uprows.txt")" ] \
+           && [ -z "$(LC_ALL=C comm -23 "$_w/hist-prev.txt" "$_w/hist-cur.txt" | LC_ALL=C comm -12 - "$_w/hist-uprows.txt")" ] \
+           && [ -s "$_w/hist-uprows.txt" ]; then _up=$((_up+1)); else _chg=$((_chg+1)); fi
+      fi
+      # 履歴行: 足された行のうち upstream に無い行が fork の追記。消えた行のうち upstream にも無い行は upstream が消した
+      LC_ALL=C comm -23 "$_w/hist-curh.txt" "$_w/hist-prevh.txt" | LC_ALL=C comm -23 - "$_w/hist-uph.txt" >> "$_w/hist-add.txt"
+      [ -s "$_w/hist-uph.txt" ] && LC_ALL=C comm -23 "$_w/hist-prevh.txt" "$_w/hist-curh.txt" | LC_ALL=C comm -23 - "$_w/hist-uph.txt" >> "$_w/hist-updel.txt"
+    fi
+    cp "$_w/hist-cur.txt" "$_w/hist-prev.txt"; cp "$_w/hist-curh.txt" "$_w/hist-prevh.txt"; cat "$_w/hist-curh.txt" >> "$_w/hist-all.txt"
+  }
   while IFS=$'\t' read -r _c _p; do
     git -C "$_d" show "$_c:$_p" > "$_w/hist-v.md" 2>/dev/null || continue
-    _n=$((_n+1)); _cur=$(_freeze_all_rows "$_w/hist-v.md")
-    [ "$_n" -eq 1 ] && { _first=$(_freeze_hist_n "$_w/hist-v.md"); } || { [ "$_cur" != "$_prev" ] && _chg=$((_chg+1)); }
-    _prev=$_cur; _freeze_hist_rows "$_w/hist-v.md" >> "$_w/hist-all.txt"
-  done < <(git -C "$_d" log --follow --format='%H' --name-only -- "$_rel" 2>/dev/null | LC_ALL=C awk 'NF==1 && length($1)==40 && $1 !~ /[^0-9a-f]/ {c=$1; next} NF && c {print c "\t" $0; c=""}' | LC_ALL=C awk '{l[NR]=$0} END{for(i=NR;i>0;i--)print l[i]}')
+    # upstream のコミットそのもの（fast-forward で入った場合）は自分自身と比べる＝全行が upstream から来た変更。merge は第 2 親で判定する
+    if _fha_is_up "$_c"; then _p2=$_c; else _p2=$(git -C "$_d" rev-parse -q --verify "$_c^2" 2>/dev/null); _fha_is_up "$_p2" || _p2=""; fi
+    _fha_step "$_w/hist-v.md" "$_p2" "$_p"
+  done < <(git -C "$_d" log --first-parent --follow --format='%H' --name-only -- "$_rel" 2>/dev/null | LC_ALL=C awk 'NF==1 && length($1)==40 && $1 !~ /[^0-9a-f]/ {c=$1; next} NF && c {print c "\t" $0; c=""}' | LC_ALL=C awk '{l[NR]=$0} END{for(i=NR;i>0;i--)print l[i]}')
   # 【--reverse を付けない】git は --follow と --reverse を併用すると改名前の版を返さない（実測）。新しい順で取って逆に並べる
   cp "$_d/$_rel" "$_last" 2>/dev/null || : > "$_last"
-  if [ "$_n" -eq 0 ]; then _first=$(_freeze_hist_n "$_last"); else _cur=$(_freeze_all_rows "$_last"); [ "$_cur" != "$_prev" ] && _chg=$((_chg+1)); fi
-  _n=$((_n+1))
+  _p2=$(git -C "$_d" rev-parse -q --verify MERGE_HEAD 2>/dev/null); _fha_is_up "$_p2" || _p2=""
+  _p=$(git -C "$_d" ls-files --full-name -- "$_rel" 2>/dev/null | head -1); [ -n "$_p" ] || _p=$_rel
+  _fha_step "$_last" "$_p2" "$_p"
+  unset -f _fha_step _fha_is_up
   _freeze_hist_rows "$_last" | LC_ALL=C sort -u > "$_w/hist-now.txt"
-  LC_ALL=C sort -u "$_w/hist-all.txt" > "$_w/hist-ever.txt"
-  printf '%s %s %s %s\n' "$_chg" "$(( $(_freeze_hist_n "$_last") - ${_first:-0} ))" "$(LC_ALL=C comm -23 "$_w/hist-ever.txt" "$_w/hist-now.txt" | LC_ALL=C grep -c . || true)" "$_n"
+  LC_ALL=C sort -u "$_w/hist-all.txt" -o "$_w/hist-all.txt"; LC_ALL=C sort -u "$_w/hist-updel.txt" -o "$_w/hist-updel.txt"
+  printf '%s %s %s %s %s\n' "$_chg" \
+    "$(LC_ALL=C sort -u "$_w/hist-add.txt" | LC_ALL=C grep -c . || true)" \
+    "$(LC_ALL=C comm -23 "$_w/hist-all.txt" "$_w/hist-now.txt" | LC_ALL=C comm -23 - "$_w/hist-updel.txt" | LC_ALL=C grep -c . || true)" \
+    "$_n" "$_up"
 }
 # 判定: ハッシュ表が変わった回数 ≤ 増えた履歴行の数、かつ消えた履歴行が 0
 _freeze_hist_ok() { set -- $1; [ "$1" -le "$2" ] && [ "$3" -eq 0 ]; }
@@ -3602,12 +3633,15 @@ while IFS= read -r _crf; do
     # 【ハッシュ表を変えたら、その分だけ履歴が増えていること】git の履歴（改名もたどる）と未コミットの変更を並べて区間で見る
     if [ "$(git -C "$SCRIPT_DIR" rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then
       _frz_aw="$WORK/freeze-audit"; mkdir -p "$_frz_aw"
-      _frz_au=$(_freeze_hist_audit "$SCRIPT_DIR" "${_crf#"$SCRIPT_DIR"/}" "$_frz_aw")
-      read -r _frz_a1 _frz_a2 _frz_a3 _frz_a4 <<<"$_frz_au"
+      # upstream の版の参照は fork 固有の解決器があれば使う（無ければ全変更を数える。dev/fork-upstream-ref.sh）
+      _frz_ur=""; [ -x "$SCRIPT_DIR/dev/fork-upstream-ref.sh" ] && _frz_ur=$("$SCRIPT_DIR/dev/fork-upstream-ref.sh" "$SCRIPT_DIR" 2>/dev/null | tr '\n' ' ')
+      _frz_urn=""; [ -n "${_frz_ur// /}" ] || _frz_urn="。upstream の参照が無いので全変更を数えた"
+      _frz_au=$(_freeze_hist_audit "$SCRIPT_DIR" "${_crf#"$SCRIPT_DIR"/}" "$_frz_aw" "$_frz_ur")
+      read -r _frz_a1 _frz_a2 _frz_a3 _frz_a4 _frz_a5 <<<"$_frz_au"
       _freeze_hist_ok "$_frz_au" \
-        && ok "${_crfn} はハッシュ表の変更の回数（${_frz_a1}）以上に再凍結の履歴を足し、過去の履歴行を消していない（版 ${_frz_a4}）" \
+        && ok "${_crfn} はハッシュ表の変更の回数（${_frz_a1}）以上に再凍結の履歴を足し、過去の履歴行を消していない（版 ${_frz_a4}・upstream から来たので数えない変更 ${_frz_a5:-0}${_frz_urn}）" \
         || ng "★${_crfn} の再凍結の履歴が足りない（ハッシュ表の変更 ${_frz_a1} 回 / 増えた履歴行 ${_frz_a2} / 消えた履歴行 ${_frz_a3}）。ハッシュを変えたら履歴に行を足す（追記専用）"
-      rm -rf "$_frz_aw"; unset _frz_aw _frz_au _frz_a1 _frz_a2 _frz_a3 _frz_a4
+      rm -rf "$_frz_aw"; unset _frz_aw _frz_au _frz_a1 _frz_a2 _frz_a3 _frz_a4 _frz_a5 _frz_ur _frz_urn
     else
       ng "★${_crfn} の再凍結の履歴の追記を確かめられない（git の履歴が読めないか浅い。完全な履歴で走らせる）"
     fi
@@ -3681,6 +3715,49 @@ if [ -n "$_frz_h0" ]; then
   _freeze_hist_ok "$(_frz_case c _fh_hashthenrow)" && ok "注入検査: ハッシュの変更の後のコミットで履歴を足せば通す（区間で判定。赤が消えなくならない）" || ng "★注入検査: 後から履歴を足しても通らない（コミット単位で縛っている）"
   _freeze_hist_ok "$(_frz_case d _fh_rotate)" && ng "★注入検査: 古い履歴行を消して新しい行を足す数合わせを通した" || ok "注入検査: 古い履歴行を消した版を検出する（追記専用）"
   _freeze_hist_ok "$(_frz_case e _fh_decoy)" && ng "★注入検査: 2 つ目の履歴見出しで水増しした版を通した" || ok "注入検査: 2 つ目の「再凍結の履歴」見出しの行は数えない"
+  # 【upstream の取り込み】main（upstream のミラー）と custom（fork）を作り、取り込みの merge を再現する
+  _frz_h1=$(_freeze_rows "$_frz_src" freeze-table | LC_ALL=C awk -F'\t' 'length($2)==16 && $2 !~ /[^0-9a-f]/ {print $2; exit}')
+  _fu_setup() { rm -rf "$_frz_g" "$_frz_aw"; mkdir -p "$_frz_g/fw/dev" "$_frz_aw"
+    git -C "$_frz_g" init -q -b main; git -C "$_frz_g" config user.email t@t; git -C "$_frz_g" config user.name t
+    cp "$_frz_src" "$_frz_g/fw/dev/r.md"
+    # 履歴の先頭と末尾に別々の行を足しても merge が衝突しないよう、間に行を挟んでおく
+    LC_ALL=C awk '{print} /^### 再凍結の履歴/{s=1} s && /^\| 20[0-9][0-9]-/ && !d {for(i=1;i<=4;i++) print "| 2000-01-0" i " | selftest の詰め物 |"; d=1}' "$_frz_g/fw/dev/r.md" > "$_frz_aw.t" && mv "$_frz_aw.t" "$_frz_g/fw/dev/r.md"
+    _fh_commit init; git -C "$_frz_g" checkout -q -b custom; }
+  _fu_sync()  { git -C "$_frz_g" checkout -q custom; git -C "$_frz_g" merge -q --no-edit ${_fu_ff:---no-ff} main >/dev/null 2>&1 \
+                  || { ng "★注入検査: フィクスチャの取り込みの merge が衝突した（検査が空回りする。行の位置を見直す）"; git -C "$_frz_g" merge --abort 2>/dev/null; }; }
+  _fu_audit() { _freeze_hist_audit "$_frz_g/fw" dev/r.md "$_frz_aw" "${1-$(git -C "$_frz_g" rev-parse main)}"; }
+  _fu_main()  { git -C "$_frz_g" checkout -q main; }
+  # (1) upstream がハッシュだけ変え、fork が merge で取り込む → 通す
+  _fu_setup; _fu_main; _fh_hash ffffffffffffffff; _fh_commit up; _fu_sync
+  _freeze_hist_ok "$(_fu_audit)" && ok "注入検査: upstream が変えたハッシュを取り込んだだけなら通す（fork の違反にしない）" || ng "★注入検査: upstream の再凍結を取り込んだだけで赤になる（$(_fu_audit)）"
+  _fu_setup; _fu_main; _fh_hash ffffffffffffffff; _fh_commit up; _fu_ff=--ff-only _fu_sync
+  _freeze_hist_ok "$(_fu_audit)" && ok "注入検査: fast-forward で入った upstream のコミットも upstream から来た変更として数えない" || ng "★注入検査: fast-forward の取り込みで赤になる（$(_fu_audit)）"
+  _freeze_hist_ok "$(_fu_audit "")" && ng "★注入検査: upstream の参照を渡さないのに取り込みを除外した" || ok "注入検査: upstream の参照が無ければ従来どおり全変更を数える"
+  # (2) 取り込みと同じ PR で fork も別のハッシュを変え、履歴を書かない → 赤
+  _fh_hash2() { LC_ALL=C sed -i.bak "s/\`${_frz_h1}\`/\`eeeeeeeeeeeeeeee\`/" "$_frz_g/fw/dev/r.md"; rm -f "$_frz_g/fw/dev/r.md.bak"; }
+  _fu_setup; _fh_hash2; _fh_commit fork; _fu_main; _fh_hash ffffffffffffffff; _fh_commit up; _fu_sync
+  _freeze_hist_ok "$(_fu_audit)" && ng "★注入検査: 取り込みに紛れた fork のハッシュ変更を見逃した" || ok "注入検査: 取り込みに紛れた fork のハッシュ変更（履歴なし）は検出する"
+  # (3) upstream がハッシュ変更と履歴行を足しても、fork のハッシュ変更（履歴なし）は相殺されない → 赤
+  _fu_setup; _fh_hash2; _fh_commit fork; _fu_main; _fh_hash ffffffffffffffff; _fh_row 2098-01-01; _fh_commit up; _fu_sync
+  _freeze_hist_ok "$(_fu_audit)" && ng "★注入検査: upstream が足した履歴行で fork のハッシュ変更が相殺された" || ok "注入検査: upstream の履歴行は fork の追記に数えない（相殺させない）"
+  # (4) upstream が自分の履歴行を消したものを取り込む → fork の違反にしない。fork が消せば赤
+  _fu_setup; _fu_main; _fh_rotate; _fu_sync
+  _freeze_hist_ok "$(_fu_audit)" && ok "注入検査: upstream 自身が消した履歴行・再凍結を取り込んでも通す" || ng "★注入検査: upstream 自身の履歴の変更を取り込むと赤になる（$(_fu_audit)）"
+  _fu_setup; _fh_rotate
+  _freeze_hist_ok "$(_fu_audit)" && ng "★注入検査: fork が履歴行を消したのに、upstream の参照があると通した" || ok "注入検査: fork が消した履歴行は upstream の参照があっても検出する"
+  # (5) fork が先に（古い日付で）履歴つきの再凍結をし、後から upstream が別の再凍結をして取り込む → 通す（日付順で二重に数えない）
+  _fh_rowend() { LC_ALL=C awk -v r="| $1 | selftest の注入（末尾） |" '/^### 再凍結の履歴/{s=1} s && /^\| 20[0-9][0-9]-/{n=NR} {l[NR]=$0} END{for(i=1;i<=NR;i++){print l[i]; if(i==n) print r}}' "$_frz_g/fw/dev/r.md" > "$_frz_aw.t" && mv "$_frz_aw.t" "$_frz_g/fw/dev/r.md"; }
+  _fu_setup; _fh_hash2; _fh_rowend 2097-01-01; GIT_COMMITTER_DATE='2020-01-01T00:00:00' GIT_AUTHOR_DATE='2020-01-01T00:00:00' _fh_commit fork
+  _fu_main; _fh_hash ffffffffffffffff; _fh_row 2098-01-01; GIT_COMMITTER_DATE='2021-01-01T00:00:00' GIT_AUTHOR_DATE='2021-01-01T00:00:00' _fh_commit up; _fu_sync
+  _freeze_hist_ok "$(_fu_audit)" && ok "注入検査: fork の履歴つき再凍結の後に upstream の再凍結を取り込んでも通す（日付順に依らない）" || ng "★注入検査: fork の再凍結を二重に数えて取り込みが赤になる（$(_fu_audit)）"
+  # (6) fork がハッシュを upstream の値に戻す（merge でないコミット）→ fork の変更として数える
+  _fu_setup; _fh_hash2; _fh_row 2097-01-01; _fh_commit f1; LC_ALL=C sed -i.bak "s/\`eeeeeeeeeeeeeeee\`/\`${_frz_h1}\`/" "$_frz_g/fw/dev/r.md"; rm -f "$_frz_g/fw/dev/r.md.bak"; _fh_commit f2
+  _freeze_hist_ok "$(_fu_audit)" && ng "★注入検査: fork がハッシュを upstream の値に戻した変更を upstream から来た変更として見逃した" || ok "注入検査: merge でない fork のコミットは、upstream と同じ値への変更でも数える"
+  # (7) 未コミットの取り込み（MERGE_HEAD）でも upstream の変更を fork の違反にしない
+  _fu_setup; _fu_main; _fh_hash ffffffffffffffff; _fh_commit up; git -C "$_frz_g" checkout -q custom; git -C "$_frz_g" merge -q --no-commit --no-ff main >/dev/null 2>&1
+  _freeze_hist_ok "$(_fu_audit)" && ok "注入検査: コミット前の取り込み（MERGE_HEAD）でも upstream の再凍結を fork の違反にしない" || ng "★注入検査: コミット前の取り込みで赤になる（$(_fu_audit)）"
+  unset -f _fh_rowend
+  unset -f _fu_setup _fu_sync _fu_audit _fu_main _fh_hash2; unset _frz_h1
   # 改名をまたいだハッシュ変更（改名の前に変え、後で改名）を、改名後のパスから検出できること
   rm -rf "$_frz_g" "$_frz_aw"; mkdir -p "$_frz_g/fw/dev" "$_frz_aw"
   git -C "$_frz_g" init -q; git -C "$_frz_g" config user.email t@t; git -C "$_frz_g" config user.name t

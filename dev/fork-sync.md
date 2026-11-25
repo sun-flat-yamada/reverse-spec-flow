@@ -63,6 +63,17 @@ GitHub はワークフローファイルを変える push に `workflows` 権限
 これは GitHub の仕様（ワークフローの連鎖を防ぐため）。取り込み PR に CI を走らせたい場合は、
 PR を一度 close → reopen するか、`GITHUB_TOKEN` の代わりに GitHub App / PAT のトークンを使う。
 
+**凍結記録（`dev/completion-run*-freeze.md`）の検査と取り込み。** `selftest.sh` の T-FREEZE は「ハッシュ表を変えたら再凍結の履歴を足す」を
+git の履歴で確かめる。upstream が再凍結した記録を取り込んでも、それは fork の違反として数えない。`dev/fork-upstream-ref.sh` は
+upstream の版とみなす参照（`upstream/main` と `origin/main` の**あるものすべて**。片方が古いままでも取りこぼさない）を返し、検査は
+`fork/custom` の first-parent の履歴を版ごとに比べて、**upstream から来た変更だけ**を除外する。除外されるのは
+(1) merge の第 2 親（参照のどれかから到達できるもの）が持ち込んだ変更のうち、その親の版と一致する行、
+(2) fast-forward で入った upstream 自身のコミット、(3) 未コミットの取り込み merge（`MERGE_HEAD`）の 3 つだけ。
+**取り込み PR で fork 側が履歴を書き足す必要は無い。** fork の通常のコミットは、upstream の値へ戻す変更も含めて常に数える。
+取り込みに紛れて fork がハッシュを変えた分も赤になる（そのときは履歴に行を足す）。upstream の履歴行は fork の変更の相殺に使えない。
+CI（`actions/checkout` の `fetch-depth: 0`）は `origin/main` を取得するので同じ判定になる。参照が 1 つも無い clone では除外せず、すべての変更を数える。
+fork 側で記録を改名すると upstream 側の版をたどれず、取り込んだ変更が数えられる（赤になる方向に倒れる。そのときは履歴に行を足す）。
+
 ## 3. 初期設定（リポジトリ設定。人が一度だけ行う）
 
 | # | 設定 | 場所 | 理由 |
