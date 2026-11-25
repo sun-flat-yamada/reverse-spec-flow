@@ -8,7 +8,7 @@ upstream 側がハッシュを変えた記録が入ると、fork が書いてい
 - **upstream の版の正本は fork の `main`（upstream のミラー）。** 参照名の解決は fork 固有なので `dev/fork-upstream-ref.sh` に置き、
   `selftest.sh` は「あれば呼ぶ」だけにする（upstream が同じ `selftest.sh` を使っても、このファイルが無ければ従来どおり全件を数える）。
 - 版の変化（前の版 → 次の版）ごとに、変わった行がすべて「その版と upstream の合流点（`git merge-base <版> <upstream>`）にある記録」と
-  一致していれば upstream 由来として数えない。upstream のコミットそのもの・取り込みの merge コミット・取り込み後の作業ツリーのいずれも、
+  一致していれば upstream から来たものとして数えない。upstream のコミットそのもの・取り込みの merge コミット・取り込み後の作業ツリーのいずれも、
   この規則で同じに扱える（内容で判定するので、日付順の並びや merge の形に依らない）。
 - 履歴行も同じ規則で分ける: 増えた履歴行のうち upstream の記録にある行は fork の追記として数えない（upstream の追記で fork の変更を相殺させない）。
   消えた履歴行のうち、upstream 自身が消した行（upstream のどこかの版にあり、今の upstream に無い）は fork の違反にしない。
